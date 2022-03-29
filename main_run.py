@@ -1,4 +1,5 @@
 import os
+from numpy.core.numeric import True_
 import torch
 import glob
 from torch import optim
@@ -9,6 +10,7 @@ from load_data import NUM_WRITERS
 from network_tro import ConTranModel
 from load_data import loadData as load_data_func
 from loss_tro import CER
+import wandb
 
 parser = argparse.ArgumentParser(description='seq2seq net', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 parser.add_argument('start_epoch', type=int, help='load saved weights from which epoch')
@@ -21,26 +23,46 @@ OOV = True
 NUM_THREAD = 2
 
 EARLY_STOP_EPOCH = None
-EVAL_EPOCH = 20
+EVAL_EPOCH = 50 #50
 MODEL_SAVE_EPOCH = 200
-show_iter_num = 500
+show_iter_num = 500 #500
 LABEL_SMOOTH = True
 Bi_GRU = True
 VISUALIZE_TRAIN = True
 
 BATCH_SIZE = 8
-lr_dis = 1 * 1e-4
-lr_gen = 1 * 1e-4
-lr_rec = 1 * 1e-5
-lr_cla = 1 * 1e-5
+lr_dis = 1 * 1e-4 # 1e-4
+lr_gen = 1 * 1e-4 # 1e-4
+lr_rec = 1 * 1e-5 # 1e-5
+lr_cla = 1 * 1e-5 # 1e-5
+
+
+#############################     wandb    ####################################
+#import wandb
+#
+#wandb.init(project="Handwriting-GAN-project", entity="loolootatchapong")
+#wandb.config = {
+#  "learning_rate_dis": lr_dis,
+#  "learning_rate_gen": lr_gen,
+#  "learning_rate_rec": lr_rec,
+#  "learning_rate_cla": lr_cla,
+#  "batch_size": BATCH_SIZE,
+#  "LABEL_SMOOTH" :LABEL_SMOOTH,
+#  "Bi_GRU"  : Bi_GRU,
+#  "OOV " :OOV
+#}
+
+###############################################################################
 
 CurriculumModelID = args.start_epoch
 
-
-def all_data_loader():
+def all_data_loader(): 
     data_train, data_test = load_data_func(OOV)
-    train_loader = torch.utils.data.DataLoader(data_train, collate_fn=sort_batch, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_THREAD, pin_memory=True)
-    test_loader = torch.utils.data.DataLoader(data_test, collate_fn=sort_batch, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_THREAD, pin_memory=True)
+    #print(data_train)
+    train_loader = torch.utils.data.DataLoader(data_train, collate_fn=sort_batch, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_THREAD, pin_memory=True)
+    test_loader = torch.utils.data.DataLoader(data_test, collate_fn=sort_batch, batch_size=15, shuffle=False, num_workers=1, pin_memory=True)
+    print('done loader')
+    #print(test_loader)
     return train_loader, test_loader
 
 
@@ -61,10 +83,13 @@ def sort_batch(batch):
         train_wid.append(wid)
         train_idx.append(idx)
         train_img.append(img)
+        #print(np.shape(label))
         train_img_width.append(img_width)
+
         train_label.append(label)
         img_xts.append(img_xt)
         label_xts.append(label_xt)
+        #print(np.shape(label))
         label_xts_swap.append(label_xt_swap)
 
     train_domain = np.array(train_domain)
@@ -72,8 +97,10 @@ def sort_batch(batch):
     train_wid = np.array(train_wid, dtype='int64')
     train_img = np.array(train_img, dtype='float32')
     train_img_width = np.array(train_img_width, dtype='int64')
+    #print('train_label : ',train_label)
     train_label = np.array(train_label, dtype='int64')
     img_xts = np.array(img_xts, dtype='float32')
+    #print(np.shape(label_xts_swap))
     label_xts = np.array(label_xts, dtype='int64')
     label_xts_swap = np.array(label_xts_swap, dtype='int64')
 
@@ -88,7 +115,9 @@ def sort_batch(batch):
     return train_domain, train_wid, train_idx, train_img, train_img_width, train_label, img_xts, label_xts, label_xts_swap
 
 def train(train_loader, model, dis_opt, gen_opt, rec_opt, cla_opt, epoch):
+
     model.train()
+
     loss_dis = list()
     loss_dis_tr = list()
     loss_cla = list()
@@ -100,25 +129,30 @@ def train(train_loader, model, dis_opt, gen_opt, rec_opt, cla_opt, epoch):
     cer_tr = CER()
     cer_te = CER()
     cer_te2 = CER()
+    genlist=[]
+    TAG=0
     for train_data_list in train_loader:
+        TAG+=1
+        time_s_update = time.time()
+        print('NOW ...... rec update' )
         '''rec update'''
         rec_opt.zero_grad()
-        l_rec_tr = model(train_data_list, epoch, 'rec_update', cer_tr)
+        l_rec_tr = model(train_data_list, epoch, 'rec_update', cer_func = cer_tr,Tag = TAG)
         rec_opt.step()
-
+        print('NOW ...... classifier update' )
         '''classifier update'''
         cla_opt.zero_grad()
-        l_cla_tr = model(train_data_list, epoch, 'cla_update')
+        l_cla_tr = model(train_data_list, epoch, 'cla_update',Tag= TAG)
         cla_opt.step()
-
+        print('NOW ...... dis update' )
         '''dis update'''
         dis_opt.zero_grad()
-        l_dis_tr = model(train_data_list, epoch, 'dis_update')
+        l_dis_tr = model(train_data_list, epoch, 'dis_update',Tag= TAG)
         dis_opt.step()
-
+        print('NOW ...... gen update' )
         '''gen update'''
         gen_opt.zero_grad()
-        l_total, l_dis, l_cla, l_l1, l_rec = model(train_data_list, epoch, 'gen_update', [cer_te, cer_te2])
+        l_total, l_dis, l_cla, l_l1, l_rec = model(train_data_list, epoch, 'gen_update', cer_func = [cer_te, cer_te2],Tag= TAG)
         gen_opt.step()
 
         loss_dis.append(l_dis.cpu().item())
@@ -128,6 +162,9 @@ def train(train_loader, model, dis_opt, gen_opt, rec_opt, cla_opt, epoch):
         loss_l1.append(l_l1.cpu().item())
         loss_rec.append(l_rec.cpu().item())
         loss_rec_tr.append(l_rec_tr.cpu().item())
+        genD_time = time.time()-time_s_update
+        print('gen update time : ',genD_time)
+        genlist.append(genD_time)
 
     fl_dis = np.mean(loss_dis)
     fl_dis_tr = np.mean(loss_dis_tr)
@@ -140,16 +177,40 @@ def train(train_loader, model, dis_opt, gen_opt, rec_opt, cla_opt, epoch):
     res_cer_tr = cer_tr.fin()
     res_cer_te = cer_te.fin()
     res_cer_te2 = cer_te2.fin()
+    print('gen epoch time : ',sum(genlist))
+    #####################################
+    wandb.log({"Train : gen_time": sum(genlist)})
+    wandb.log({"Train : loss_dis": fl_dis})
+    wandb.log({"Train : loss_dis_tr": fl_dis_tr})
+    wandb.log({"Train : loss_cla": fl_cla})
+    wandb.log({"Train : loss_cla_tr": fl_cla_tr})
+
+    wandb.log({"Train : loss_l1": fl_l1})
+    wandb.log({"Train : loss_rec": fl_rec})
+    wandb.log({"Train : loss_rec_tr": fl_rec_tr})
+
+    wandb.log({"Train : loss_rec_tr": res_cer_tr})
+    wandb.log({"Train : loss_rec_tr": res_cer_te})
+    wandb.log({"Train : loss_rec_tr": res_cer_te2})
+
+    wandb.log({"Train : time ": time.time()-time_s})
+    wandb.log({"Train : epoch ": epoch})
+    #####################################
+    print('time traint function : ', time.time()-time_s)
     print('epo%d <tr>-<gen>: l_dis=%.2f-%.2f, l_cla=%.2f-%.2f, l_rec=%.2f-%.2f, l1=%.2f, cer=%.2f-%.2f-%.2f, time=%.1f' % (epoch, fl_dis_tr, fl_dis, fl_cla_tr, fl_cla, fl_rec_tr, fl_rec, fl_l1, res_cer_tr, res_cer_te, res_cer_te2, time.time()-time_s))
     return res_cer_te + res_cer_te2
 
 def test(test_loader, epoch, modelFile_o_model):
+    print('Now Testing')
+    TAG=0
     if type(modelFile_o_model) == str:
         model = ConTranModel(NUM_WRITERS, show_iter_num, OOV).to(gpu)
         print('Loading ' + modelFile_o_model)
         model.load_state_dict(torch.load(modelFile_o_model)) #load
     else:
         model = modelFile_o_model
+
+    
     model.eval()
     loss_dis = list()
     loss_cla = list()
@@ -157,8 +218,10 @@ def test(test_loader, epoch, modelFile_o_model):
     time_s = time.time()
     cer_te = CER()
     cer_te2 = CER()
+
     for test_data_list in test_loader:
-        l_dis, l_cla, l_rec = model(test_data_list, epoch, 'eval', [cer_te, cer_te2])
+        TAG +=1
+        l_dis, l_cla, l_rec = model(test_data_list, epoch, 'eval',Tag =TAG , cer_func =[cer_te, cer_te2])
 
         loss_dis.append(l_dis.cpu().item())
         loss_cla.append(l_cla.cpu().item())
@@ -170,6 +233,17 @@ def test(test_loader, epoch, modelFile_o_model):
 
     res_cer_te = cer_te.fin()
     res_cer_te2 = cer_te2.fin()
+    ################################################
+    wandb.log({"EVAL: fl_dis": fl_dis})
+    wandb.log({"EVAL: fl_cla": fl_cla})
+    wandb.log({"EVAL: fl_rec": fl_rec})
+
+    wandb.log({"EVAL: res_cer_te": res_cer_te})
+    wandb.log({"EVAL: res_cer_te2": res_cer_te2})
+
+    wandb.log({"EVAL: time": time.time()-time_s})
+    #################################################
+
     print('EVAL: l_dis=%.3f, l_cla=%.3f, l_rec=%.3f, cer=%.2f-%.2f, time=%.1f' % (fl_dis, fl_cla, fl_rec, res_cer_te, res_cer_te2, time.time()-time_s))
 
 def main(train_loader, test_loader, num_writers):
@@ -184,7 +258,7 @@ def main(train_loader, test_loader, num_writers):
         #pretrain_dict = {k: v for k, v in pretrain_dict.items() if k in model_dict and not k.startswith('gen.enc_text.fc')}
         #model_dict.update(pretrain_dict)
         #model.load_state_dict(model_dict)
-
+    print('done loading model')
     dis_params = list(model.dis.parameters())
     gen_params = list(model.gen.parameters())
     rec_params = list(model.rec.parameters())
@@ -198,7 +272,8 @@ def main(train_loader, test_loader, num_writers):
     min_idx = 0
     min_count = 0
 
-    for epoch in range(CurriculumModelID, epochs):
+    for epoch in range(CurriculumModelID, epochs): 
+
         cer = train(train_loader, model, dis_opt, gen_opt, rec_opt, cla_opt, epoch)
 
         if epoch % MODEL_SAVE_EPOCH == 0:
@@ -224,6 +299,7 @@ def main(train_loader, test_loader, num_writers):
                 os.system('mv '+model_url+' '+model_url+'.bak')
                 os.system('rm save_weights/contran-*.model')
                 break
+              
 
 def rm_old_model(index):
     models = glob.glob('save_weights/*.model')
@@ -233,6 +309,30 @@ def rm_old_model(index):
             os.system('rm save_weights/contran-'+str(epoch)+'.model')
 
 if __name__ == '__main__':
+    
+    project="Handwriting-GAN-project-exp"
+    entity="loolootatchapong"
+    display_name = 'experiment 1'
+
+    config = {
+      "Colab section" : "section 1",
+      "learning_rate_dis": lr_dis,
+      "learning_rate_gen": lr_gen,
+      "learning_rate_rec": lr_rec,
+      "learning_rate_cla": lr_cla,
+      "batch_size": BATCH_SIZE,
+      "LABEL_SMOOTH" :LABEL_SMOOTH,
+      "Bi_GRU"  : Bi_GRU,
+      "OOV " :OOV
+    }
+    wandb.init(project=project,
+                entity=entity,
+                name=display_name,
+                save_code =True,
+                config = config,
+                resume=True)
+
+
     print(time.ctime())
     train_loader, test_loader = all_data_loader()
     main(train_loader, test_loader, NUM_WRITERS)

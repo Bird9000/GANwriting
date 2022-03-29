@@ -5,33 +5,56 @@ import string
 import cv2
 import numpy as np
 from pairs_idx_wid_iam import wid2label_tr, wid2label_te
+import pythainlp
+from tqdm import tqdm_notebook as tqdm
+import wandb
+import time
+import torch
+import warnings
+import ctypes
+import multiprocessing as mp
+import json
+import numpy as np
 
-CREATE_PAIRS = False
+CREATE_PAIRS = True
 
 IMG_HEIGHT = 64
 IMG_WIDTH = 216
 MAX_CHARS = 10
-# NUM_CHANNEL = 15
+#NUM_CHANNEL = 15
 NUM_CHANNEL = 50
 EXTRA_CHANNEL = NUM_CHANNEL+1
-NUM_WRITERS = 500 # iam
+NUM_WRITERS = 500 #226+20
 NORMAL = True
 OUTPUT_MAX_LEN = MAX_CHARS+2 # <GO>+groundtruth+<END>
 
-'''The folder of IAM word images, please change to your own one before run it!!'''
-img_base = '/home/lkang/datasets/iam_final_forms/words_from_forms/'
-text_corpus = 'corpora_english/brown-azAZ.tr'
 
+imagedict=dict()
+cache_hit = 0
+cache_miss = 0
+
+'''The folder of IAM word images, please change to your own one before run it!!'''
+img_base = '/content/Image/IAM/'
+text_corpus = '/content/drive/MyDrive/unsupervised_adaptation/research-GANwritingMY/corpora_english/brown-azAZ.tr'
+#img_base = '/content/drive/MyDrive/unsupervised_adaptation/Dataset/IAM/'
+#text_corpus = '/content/drive/MyDrive/unsupervised_adaptation/research-GANwriting/corpora_english/brown-azAZ.tr'
+#
 with open(text_corpus, 'r') as _f:
     text_corpus = _f.read().split()
 
-src = 'Groundtruth/gan.iam.tr_va.gt.filter27'
-tar = 'Groundtruth/gan.iam.test.gt.filter27'
+src = '/content/drive/MyDrive/unsupervised_adaptation/research-GANwritingMY/Groundtruth/gan.iam.tr_va.gt.filter27.txt' #train
+tar = '/content/drive/MyDrive/unsupervised_adaptation/research-GANwritingMY/Groundtruth/gan.iam.test.gt.filter27.txt'   #test
+#src = 'Groundtruth/gan.iam.tr_va.gt.filter27'
+#tar = 'Groundtruth/gan.iam.test.gt.filter27'
 
 def labelDictionary():
     labels = list(string.ascii_lowercase + string.ascii_uppercase)
+    #labels = list(pythainlp.thai_characters + string.ascii_lowercase + string.ascii_uppercase+"""1234567890.*/#!@$'%"•&-+ _’,()?\\:;|={}<>""")
+    #labels = list(' 120635กทม8/7Tel.49คุณธรศีะองปสาถเิดชันยDonmuagขตืู์HpyCdthriKแวพหซลจึ่็-BภบโVjk้ญ(ฒ๑๐๒๗OฝฮษใฯฐPcำฏไ)ผbMRSN๊<>ฟฎฬฤULfEYฉฆWAwsv*๋\I:_,•XJ|=ๆฑ’FG๙๕๖๘๔#๓+&')
     letter2index = {label: n for n, label in enumerate(labels)}
     index2letter = {v: k for k, v in letter2index.items()}
+    print('letter2index : ',letter2index)
+    print('index2letter : ',index2letter)
     return len(labels), letter2index, index2letter
 
 num_classes, letter2index, index2letter = labelDictionary()
@@ -60,6 +83,19 @@ class IAM_words(D.Dataset):
         self.data_dict = data_dict
         self.oov = oov
         self.output_max_len = OUTPUT_MAX_LEN
+        self.imagedict = dict()
+        print('New classs')
+        for i in range(len(self.data_dict)):
+            try:
+                self.__getitem__(i)
+            except:
+                pass
+
+        #wandb.init(project="Handwriting-GAN-project", entity="loolootatchapong")
+
+
+    def makedict():
+        pass
 
     # word [0, 15, 27, 13, 32, 31, 1, 2, 2, 2]
     def new_ed1(self, word_ori):
@@ -72,25 +108,35 @@ class IAM_words(D.Dataset):
         return label
 
     def __getitem__(self, wid_idx_num):
-        words = self.data_dict[wid_idx_num]
+        global cache_hit
+        global cache_miss
+        time_s = time.time()
         '''shuffle images'''
         np.random.shuffle(words)
-
+        cache_hit = 0
+        cache_miss = 0
         wids = list()
         idxs = list()
         imgs = list()
         img_widths = list()
         labels = list()
+        num = 0
+        timekeep =list()
 
         for word in words:
+            time_s2 = time.time()
             wid, idx = word[0].split(',')
             img, img_width = self.read_image_single(idx)
+            timekeep.append(time.time()-time_s2)
             label = self.label_padding(' '.join(word[1:]), num_tokens)
             wids.append(wid)
             idxs.append(idx)
             imgs.append(img)
             img_widths.append(img_width)
             labels.append(label)
+            num+=1
+            #print(np.shape(label))
+            
 
         if len(list(set(wids))) != 1:
             print('Error! writer id differs')
@@ -132,27 +178,56 @@ class IAM_words(D.Dataset):
         final_img = np.delete(final_img, _id, axis=0)
         final_img_width = np.delete(final_img_width, _id, axis=0)
         final_label = np.delete(final_label, _id, axis=0)
-
+        #wandb.log({"loaddata per writer : time ": time.time()-time_s})
+        print('cache_hit : ',cache_hit)
+        print('cache_miss : ',cache_miss)
+        #print('imagedict size  : \n',len(self.imagedict))
+        print("loaddata per file time (Average) : ", sum(timekeep) / len(timekeep),len(timekeep))
+        print("loaddata per file time (sum) : ", sum(timekeep))
+        print("loaddata per writer : time ",time.time()-time_s)
         return 'src', final_wid, final_idx, final_img, final_img_width, final_label, img_xt, label_xt, label_xt_swap
 
     def __len__(self):
         return len(self.data_dict)
 
     def read_image_single(self, file_name):
-        url = os.path.join(img_base, file_name + '.png')
+        global cache_hit
+        global cache_miss
+
+        url = img_base + file_name + '.png'
+        #print(url)
+        if str(url) in self.imagedict:  
+            #print("Now  get from dict",url)
+            cache_hit += 1
+            return self.imagedict[url]
+        cache_miss += 1
+        #print('now loading : ',url)
+
         img = cv2.imread(url, 0)
+
+          
+        #print(type(img))
+        #print('readimg')
 
         if img is None and os.path.exists(url):
             # image is present but corrupted
+            print('fali **************************************** : ',url)
+            print('fail to load img')
             return np.zeros((IMG_HEIGHT, IMG_WIDTH)), 0
+        try:
+          rate = float(IMG_HEIGHT) / img.shape[0]
+        except:
+          print('fali **************************************** : ',url)
+          print('fail to load img')
+          return np.zeros((IMG_HEIGHT, IMG_WIDTH)), 0
 
-        rate = float(IMG_HEIGHT) / img.shape[0]
         img = cv2.resize(img, (int(img.shape[1]*rate)+1, IMG_HEIGHT), interpolation=cv2.INTER_CUBIC)
+        
         img = img/255. # 0-255 -> 0-1
-
+        
         img = 1. - img
         img_width = img.shape[-1]
-
+      
         if img_width > IMG_WIDTH:
             outImg = img[:, :IMG_WIDTH]
             img_width = IMG_WIDTH
@@ -161,9 +236,13 @@ class IAM_words(D.Dataset):
             outImg[:, :img_width] = img
         outImg = outImg.astype('float32')
 
+
         mean = 0.5
         std = 0.5
         outImgFinal = (outImg - mean) / std
+
+        self.imagedict.update({url: (outImgFinal, img_width)})
+
         return outImgFinal, img_width
 
     def label_padding(self, labels, num_tokens):
@@ -179,6 +258,7 @@ class IAM_words(D.Dataset):
         return ll
 
 def loadData(oov):
+    time_s = time.time()
     gt_tr = src
     gt_te = tar
 
@@ -212,16 +292,19 @@ def loadData(oov):
         if CREATE_PAIRS:
             create_pairs(te_dict)
         for k in te_dict.keys():
+            if k == '':
+              continue
             new_te_dict[wid2label_te[k]] = te_dict[k]
-
+    #print('this is new_tr_dict :',new_tr_dict)
     data_train = IAM_words(new_tr_dict, oov)
     data_test = IAM_words(new_te_dict, oov)
+    print("loaddata time ",time.time()-time_s)
     return data_train, data_test
 
 def create_pairs(ddict):
     num = len(ddict.keys())
     label2wid = list(zip(range(num), ddict.keys()))
-    print(label2wid)
+    #print(label2wid)
 
 if __name__ == '__main__':
     pass

@@ -10,6 +10,9 @@ from recognizer.models.seq2seq import Seq2Seq as rec_seq2seq
 from recognizer.models.attention import locationAttention as rec_attention
 from load_data import OUTPUT_MAX_LEN, IMG_HEIGHT, IMG_WIDTH, vocab_size, index2letter, num_tokens, tokens
 import cv2
+from PIL import ImageFont, ImageDraw, Image
+from google.colab.patches import cv2_imshow
+import wandb
 
 gpu = torch.device('cuda')
 
@@ -24,6 +27,20 @@ def fine(label_list):
         return [label_list]
     else:
         return label_list
+
+def putText(img, text, position , scale):
+
+  font=ImageFont.truetype("thsarabunnew-webfont.ttf",32)
+
+  img_pil = Image.new("RGB", (216,64))
+  draw = ImageDraw.Draw(img_pil)
+  draw.text(position, text , font=font)
+  img_out = np.array(img_pil)
+
+  cv2.imwrite('imgs'+'/'+'Test'+'.png', img_out)
+
+  return img_out[:,:,0]
+
 
 def write_image(xg, pred_label, gt_img, gt_label, tr_imgs, xg_swap, pred_label_swap, gt_label_swap, title, num_tr=2):
     folder = 'imgs'
@@ -76,13 +93,25 @@ def write_image(xg, pred_label, gt_img, gt_label, tr_imgs, xg_swap, pred_label_s
         gt_text_img_swap = np.zeros_like(tar)
         pred_text_img = np.zeros_like(tar)
         pred_text_img_swap = np.zeros_like(tar)
-        cv2.putText(gt_text_img, gt_text, (5, 55), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
-        cv2.putText(gt_text_img_swap, gt_text_swap, (5, 55), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
-        cv2.putText(pred_text_img, pred_text, (5, 55), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
-        cv2.putText(pred_text_img_swap, pred_text_swap, (5, 55), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
+
+        #cv2.putText(gt_text_img, gt_text, (5, 55), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
+        #cv2.putText(gt_text_img_swap, gt_text_swap, (5, 55), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
+        #cv2.putText(pred_text_img, pred_text, (5, 55), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
+        #cv2.putText(pred_text_img_swap, pred_text_swap, (5, 55), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
+
+        position = (25,5)
+        gt_text_img = putText(gt_text_img, gt_text, position, 1)
+        gt_text_img_swap = putText(gt_text_img_swap, gt_text_swap, position, 1)
+        pred_text_img = putText(pred_text_img, pred_text, position, 1)
+        pred_text_img_swap = putText(pred_text_img_swap, pred_text_swap, position, 1)
+        
         out = np.vstack([src, gt, gt_text_img, tar, pred_text_img, gt_text_img_swap, tar_swap, pred_text_img_swap])
         outs.append(out)
     final_out = np.hstack(outs)
+    images = wandb.Image(final_out, caption=str(title))
+    state,titlere = title.split('_')
+    num,TAG = titlere.split('-')
+    wandb.log({f'{state} : {TAG}': images})
     cv2.imwrite(folder+'/'+title+'.png', final_out)
 
 def assign_adain_params(adain_params, model):
@@ -233,6 +262,7 @@ class TextEncoder_FC(nn.Module):
         xx = self.embed(x) # b,t,embed
 
         batch_size = xx.shape[0]
+        #print('*************** this is batch_size  : ' , batch_size)
         xxx = xx.reshape(batch_size, -1) # b,t*embed
         out = self.fc(xxx)
 
@@ -240,10 +270,18 @@ class TextEncoder_FC(nn.Module):
         xx_new = self.linear(xx) # b, text_max_len, 512
         ts = xx_new.shape[1]
         height_reps = f_xs_shape[-2]
+        #print('this is ts  : ' ,ts)
+        #print('this is f_xs_shape  : ',f_xs_shape)
         width_reps = f_xs_shape[-1] // ts
+        #if width_reps == 0:
+        #  width_reps = 1
         tensor_list = list()
         for i in range(ts):
             text = [xx_new[:, i:i + 1]] # b, text_max_len, 512
+
+            #print('this is text   :', text)
+            #print('this is width_reps :', width_reps)
+
             tmp = torch.cat(text * width_reps, dim=1)
             tensor_list.append(tmp)
 

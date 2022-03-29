@@ -4,6 +4,8 @@ from load_data import vocab_size, IMG_WIDTH, OUTPUT_MAX_LEN
 from modules_tro import GenModel_FC, DisModel, WriterClaModel, RecModel, write_image
 from loss_tro import recon_criterion, crit, log_softmax
 import numpy as np
+import time 
+import wandb
 
 w_dis = 1.
 w_cla = 1.
@@ -11,6 +13,17 @@ w_l1 = 0.
 w_rec = 1.
 
 gpu = torch.device('cuda')
+
+
+#############################     wandb    ####################################
+#import wandb
+#
+#wandb.init(project="process-time-project", entity="loolootatchapong")
+#wandb.config = {
+#  "hi " :"time"
+#}
+
+###############################################################################
 
 class ConTranModel(nn.Module):
     def __init__(self, num_writers, show_iter_num, oov):
@@ -22,8 +35,14 @@ class ConTranModel(nn.Module):
         self.iter_num = 0
         self.show_iter_num = show_iter_num
         self.oov = oov
+        wandb.config.update({ "w_dis": w_dis,
+                              "w_cla": w_cla,
+                              "w_l1" : w_l1,
+                              "w_rec": w_rec})
 
-    def forward(self, train_data_list, epoch, mode, cer_func=None):
+
+    def forward(self, train_data_list, epoch, mode,Tag = 0, cer_func=None):
+
         tr_domain, tr_wid, tr_idx, tr_img, tr_img_width, tr_label, img_xt, label_xt, label_xt_swap = train_data_list
         tr_wid = tr_wid.to(gpu)
         tr_img = tr_img.to(gpu)
@@ -34,6 +53,7 @@ class ConTranModel(nn.Module):
         label_xt_swap = label_xt_swap.to(gpu)
         batch_size = tr_domain.shape[0]
 
+        time_s = time.time()
         if mode == 'rec_update':
             tr_img_rec = tr_img[:, 0:1, :, :] # 8,50,64,200 choose one channel 8,1,64,200
             tr_img_rec = tr_img_rec.requires_grad_()
@@ -43,6 +63,7 @@ class ConTranModel(nn.Module):
             l_rec_tr = crit(log_softmax(pred_xt_tr.reshape(-1,vocab_size)), tr_label_rec2.reshape(-1))
             cer_func.add(pred_xt_tr, tr_label_rec2)
             l_rec_tr.backward()
+            wandb.log({"rec_update : time ": time.time()-time_s})
             return l_rec_tr
 
         elif mode =='cla_update':
@@ -50,6 +71,7 @@ class ConTranModel(nn.Module):
             tr_img_rec = tr_img_rec.requires_grad_()
             l_cla_tr = self.cla(tr_img_rec, tr_wid)
             l_cla_tr.backward()
+            wandb.log({"cla_update : time ": time.time()-time_s})
             return l_cla_tr
 
         elif mode == 'gen_update':
@@ -94,6 +116,7 @@ class ConTranModel(nn.Module):
             '''fin'''
             l_total = w_dis * l_dis + w_cla * l_cla + w_l1 * l_l1 + w_rec * l_rec
             l_total.backward()
+            wandb.log({"gen_update : time ": time.time()-time_s})
             return l_total, l_dis, l_cla, l_l1, l_rec
 
         elif mode == 'dis_update':
@@ -109,6 +132,7 @@ class ConTranModel(nn.Module):
             with torch.no_grad():
                 f_xs = self.gen.enc_image(tr_img)
                 f_xt, f_embed = self.gen.enc_text(label_xt, f_xs.shape)
+                
                 f_mix = self.gen.mix(f_xs, f_embed)
                 xg = self.gen.decode(f_mix, f_xt)
                 # swap tambien
@@ -127,7 +151,8 @@ class ConTranModel(nn.Module):
                 with torch.no_grad():
                     pred_xt = self.rec(xg, label_xt, img_width=torch.from_numpy(np.array([IMG_WIDTH]*batch_size)))
                     pred_xt_swap = self.rec(xg_swap, label_xt_swap, img_width=torch.from_numpy(np.array([IMG_WIDTH]*batch_size)))
-                write_image(xg, pred_xt, img_xt, label_xt, tr_img, xg_swap, pred_xt_swap, label_xt_swap, 'epoch_'+str(epoch)+'-'+str(self.iter_num))
+                write_image(xg, pred_xt, img_xt, label_xt, tr_img, xg_swap, pred_xt_swap, label_xt_swap, 'epoch_'+str(epoch)+'-'+str(Tag))
+            wandb.log({"dis_update : time ": time.time()-time_s})
             return l_total
 
         elif mode =='eval':
@@ -143,7 +168,7 @@ class ConTranModel(nn.Module):
                 '''write images'''
                 pred_xt = self.rec(xg, label_xt, img_width=torch.from_numpy(np.array([IMG_WIDTH]*batch_size)))
                 pred_xt_swap = self.rec(xg_swap, label_xt_swap, img_width=torch.from_numpy(np.array([IMG_WIDTH]*batch_size)))
-                write_image(xg, pred_xt, img_xt, label_xt, tr_img, xg_swap, pred_xt_swap, label_xt_swap, 'eval_'+str(epoch)+'-'+str(self.iter_num))
+                write_image(xg, pred_xt, img_xt, label_xt, tr_img, xg_swap, pred_xt_swap, label_xt_swap, 'eval_'+str(epoch)+'-'+str(Tag))
                 self.iter_num += 1
                 '''dis loss'''
                 l_dis_ori = self.dis.calc_gen_loss(xg)
@@ -165,4 +190,5 @@ class ConTranModel(nn.Module):
                 l_cla_swap = self.cla(xg_swap, tr_wid)
                 l_cla = (l_cla_ori + l_cla_swap) / 2.
 
+            wandb.log({"eval : time ": time.time()-time_s})
             return l_dis, l_cla, l_rec
