@@ -67,3 +67,4 @@ If you use the code for your research, please cite our paper:
 To be updated...
 ```
 # GANwriting
+# GANwriting
