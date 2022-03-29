@@ -36,33 +36,13 @@ lr_gen = 1 * 1e-4 # 1e-4
 lr_rec = 1 * 1e-5 # 1e-5
 lr_cla = 1 * 1e-5 # 1e-5
 
-
-#############################     wandb    ####################################
-#import wandb
-#
-#wandb.init(project="Handwriting-GAN-project", entity="loolootatchapong")
-#wandb.config = {
-#  "learning_rate_dis": lr_dis,
-#  "learning_rate_gen": lr_gen,
-#  "learning_rate_rec": lr_rec,
-#  "learning_rate_cla": lr_cla,
-#  "batch_size": BATCH_SIZE,
-#  "LABEL_SMOOTH" :LABEL_SMOOTH,
-#  "Bi_GRU"  : Bi_GRU,
-#  "OOV " :OOV
-#}
-
-###############################################################################
-
 CurriculumModelID = args.start_epoch
 
 def all_data_loader(): 
     data_train, data_test = load_data_func(OOV)
-    #print(data_train)
     train_loader = torch.utils.data.DataLoader(data_train, collate_fn=sort_batch, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_THREAD, pin_memory=True)
     test_loader = torch.utils.data.DataLoader(data_test, collate_fn=sort_batch, batch_size=15, shuffle=False, num_workers=1, pin_memory=True)
     print('done loader')
-    #print(test_loader)
     return train_loader, test_loader
 
 
@@ -83,13 +63,11 @@ def sort_batch(batch):
         train_wid.append(wid)
         train_idx.append(idx)
         train_img.append(img)
-        #print(np.shape(label))
         train_img_width.append(img_width)
 
         train_label.append(label)
         img_xts.append(img_xt)
         label_xts.append(label_xt)
-        #print(np.shape(label))
         label_xts_swap.append(label_xt_swap)
 
     train_domain = np.array(train_domain)
@@ -97,10 +75,8 @@ def sort_batch(batch):
     train_wid = np.array(train_wid, dtype='int64')
     train_img = np.array(train_img, dtype='float32')
     train_img_width = np.array(train_img_width, dtype='int64')
-    #print('train_label : ',train_label)
     train_label = np.array(train_label, dtype='int64')
     img_xts = np.array(img_xts, dtype='float32')
-    #print(np.shape(label_xts_swap))
     label_xts = np.array(label_xts, dtype='int64')
     label_xts_swap = np.array(label_xts_swap, dtype='int64')
 
@@ -253,11 +229,7 @@ def main(train_loader, test_loader, num_writers):
         model_file = 'save_weights/contran-' + str(CurriculumModelID) +'.model'
         print('Loading ' + model_file)
         model.load_state_dict(torch.load(model_file)) #load
-        #pretrain_dict = torch.load(model_file)
-        #model_dict = model.state_dict()
-        #pretrain_dict = {k: v for k, v in pretrain_dict.items() if k in model_dict and not k.startswith('gen.enc_text.fc')}
-        #model_dict.update(pretrain_dict)
-        #model.load_state_dict(model_dict)
+
     print('done loading model')
     dis_params = list(model.dis.parameters())
     gen_params = list(model.gen.parameters())

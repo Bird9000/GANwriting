@@ -14,17 +14,6 @@ w_rec = 1.
 
 gpu = torch.device('cuda')
 
-
-#############################     wandb    ####################################
-#import wandb
-#
-#wandb.init(project="process-time-project", entity="loolootatchapong")
-#wandb.config = {
-#  "hi " :"time"
-#}
-
-###############################################################################
-
 class ConTranModel(nn.Module):
     def __init__(self, num_writers, show_iter_num, oov):
         super(ConTranModel, self).__init__()

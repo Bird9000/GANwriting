@@ -262,7 +262,6 @@ class TextEncoder_FC(nn.Module):
         xx = self.embed(x) # b,t,embed
 
         batch_size = xx.shape[0]
-        #print('*************** this is batch_size  : ' , batch_size)
         xxx = xx.reshape(batch_size, -1) # b,t*embed
         out = self.fc(xxx)
 
@@ -270,18 +269,10 @@ class TextEncoder_FC(nn.Module):
         xx_new = self.linear(xx) # b, text_max_len, 512
         ts = xx_new.shape[1]
         height_reps = f_xs_shape[-2]
-        #print('this is ts  : ' ,ts)
-        #print('this is f_xs_shape  : ',f_xs_shape)
         width_reps = f_xs_shape[-1] // ts
-        #if width_reps == 0:
-        #  width_reps = 1
         tensor_list = list()
         for i in range(ts):
             text = [xx_new[:, i:i + 1]] # b, text_max_len, 512
-
-            #print('this is text   :', text)
-            #print('this is width_reps :', width_reps)
-
             tmp = torch.cat(text * width_reps, dim=1)
             tensor_list.append(tmp)
 

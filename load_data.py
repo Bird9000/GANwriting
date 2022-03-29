@@ -36,20 +36,16 @@ cache_miss = 0
 '''The folder of IAM word images, please change to your own one before run it!!'''
 img_base = '/content/Image/IAM/'
 text_corpus = '/content/drive/MyDrive/unsupervised_adaptation/research-GANwritingMY/corpora_english/brown-azAZ.tr'
-#img_base = '/content/drive/MyDrive/unsupervised_adaptation/Dataset/IAM/'
-#text_corpus = '/content/drive/MyDrive/unsupervised_adaptation/research-GANwriting/corpora_english/brown-azAZ.tr'
-#
+
 with open(text_corpus, 'r') as _f:
     text_corpus = _f.read().split()
 
 src = '/content/drive/MyDrive/unsupervised_adaptation/research-GANwritingMY/Groundtruth/gan.iam.tr_va.gt.filter27.txt' #train
 tar = '/content/drive/MyDrive/unsupervised_adaptation/research-GANwritingMY/Groundtruth/gan.iam.test.gt.filter27.txt'   #test
-#src = 'Groundtruth/gan.iam.tr_va.gt.filter27'
-#tar = 'Groundtruth/gan.iam.test.gt.filter27'
+
 
 def labelDictionary():
     labels = list(string.ascii_lowercase + string.ascii_uppercase)
-    #labels = list(pythainlp.thai_characters + string.ascii_lowercase + string.ascii_uppercase+"""1234567890.*/#!@$'%"•&-+ _’,()?\\:;|={}<>""")
     #labels = list(' 120635กทม8/7Tel.49คุณธรศีะองปสาถเิดชันยDonmuagขตืู์HpyCdthriKแวพหซลจึ่็-BภบโVjk้ญ(ฒ๑๐๒๗OฝฮษใฯฐPcำฏไ)ผbMRSN๊<>ฟฎฬฤULfEYฉฆWAwsv*๋\I:_,•XJ|=ๆฑ’FG๙๕๖๘๔#๓+&')
     letter2index = {label: n for n, label in enumerate(labels)}
     index2letter = {v: k for k, v in letter2index.items()}
@@ -91,13 +87,6 @@ class IAM_words(D.Dataset):
             except:
                 pass
 
-        #wandb.init(project="Handwriting-GAN-project", entity="loolootatchapong")
-
-
-    def makedict():
-        pass
-
-    # word [0, 15, 27, 13, 32, 31, 1, 2, 2, 2]
     def new_ed1(self, word_ori):
         word = word_ori.copy()
         start = word.index(tokens['GO_TOKEN'])
@@ -111,8 +100,9 @@ class IAM_words(D.Dataset):
         global cache_hit
         global cache_miss
         time_s = time.time()
+        words = self.data_dict[wid_idx_num]
         '''shuffle images'''
-        np.random.shuffle(words)
+        words = np.random.shuffle(words)
         cache_hit = 0
         cache_miss = 0
         wids = list()
@@ -135,7 +125,6 @@ class IAM_words(D.Dataset):
             img_widths.append(img_width)
             labels.append(label)
             num+=1
-            #print(np.shape(label))
             
 
         if len(list(set(wids))) != 1:
@@ -178,13 +167,11 @@ class IAM_words(D.Dataset):
         final_img = np.delete(final_img, _id, axis=0)
         final_img_width = np.delete(final_img_width, _id, axis=0)
         final_label = np.delete(final_label, _id, axis=0)
-        #wandb.log({"loaddata per writer : time ": time.time()-time_s})
-        print('cache_hit : ',cache_hit)
-        print('cache_miss : ',cache_miss)
-        #print('imagedict size  : \n',len(self.imagedict))
-        print("loaddata per file time (Average) : ", sum(timekeep) / len(timekeep),len(timekeep))
-        print("loaddata per file time (sum) : ", sum(timekeep))
-        print("loaddata per writer : time ",time.time()-time_s)
+        #print('cache_hit : ',cache_hit)
+        #print('cache_miss : ',cache_miss)
+        #print("loaddata per file time (Average) : ", sum(timekeep) / len(timekeep),len(timekeep))
+        #print("loaddata per file time (sum) : ", sum(timekeep))
+        #print("loaddata per writer : time ",time.time()-time_s)
         return 'src', final_wid, final_idx, final_img, final_img_width, final_label, img_xt, label_xt, label_xt_swap
 
     def __len__(self):
@@ -195,19 +182,12 @@ class IAM_words(D.Dataset):
         global cache_miss
 
         url = img_base + file_name + '.png'
-        #print(url)
         if str(url) in self.imagedict:  
-            #print("Now  get from dict",url)
             cache_hit += 1
             return self.imagedict[url]
         cache_miss += 1
-        #print('now loading : ',url)
 
         img = cv2.imread(url, 0)
-
-          
-        #print(type(img))
-        #print('readimg')
 
         if img is None and os.path.exists(url):
             # image is present but corrupted
@@ -292,10 +272,7 @@ def loadData(oov):
         if CREATE_PAIRS:
             create_pairs(te_dict)
         for k in te_dict.keys():
-            if k == '':
-              continue
             new_te_dict[wid2label_te[k]] = te_dict[k]
-    #print('this is new_tr_dict :',new_tr_dict)
     data_train = IAM_words(new_tr_dict, oov)
     data_test = IAM_words(new_te_dict, oov)
     print("loaddata time ",time.time()-time_s)
@@ -304,7 +281,6 @@ def loadData(oov):
 def create_pairs(ddict):
     num = len(ddict.keys())
     label2wid = list(zip(range(num), ddict.keys()))
-    #print(label2wid)
 
 if __name__ == '__main__':
     pass
