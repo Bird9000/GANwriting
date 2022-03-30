@@ -111,6 +111,7 @@ class IAM_words(D.Dataset):
         global cache_hit
         global cache_miss
         time_s = time.time()
+        words = self.data_dict[wid_idx_num]
         '''shuffle images'''
         np.random.shuffle(words)
         cache_hit = 0
