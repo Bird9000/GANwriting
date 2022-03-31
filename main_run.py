@@ -59,7 +59,7 @@ CurriculumModelID = args.start_epoch
 def all_data_loader(): 
     data_train, data_test = load_data_func(OOV)
     #print(data_train)
-    train_loader = torch.utils.data.DataLoader(data_train, collate_fn=sort_batch, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_THREAD, pin_memory=True)
+    train_loader = torch.utils.data.DataLoader(data_train, collate_fn=sort_batch, batch_size=BATCH_SIZE, shuffle=True, num_workers=NUM_THREAD, pin_memory=True)
     test_loader = torch.utils.data.DataLoader(data_test, collate_fn=sort_batch, batch_size=15, shuffle=False, num_workers=1, pin_memory=True)
     print('done loader')
     #print(test_loader)
